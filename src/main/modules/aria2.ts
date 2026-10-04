@@ -93,11 +93,23 @@ export const stopSyncing = (): void => {
 	syncChild = undefined;
 };
 
+// a stale .torrent left beside the data (an older client torrent, or one
+// saved under a different name) makes aria2 resume the wrong swarm
+const clearTorrentMetadata = async (dir: string) => {
+	const entries = await fs.readdir(dir).catch(() => [] as string[]);
+	await Promise.all(
+		entries
+			.filter(n => /\.torrent(\.aria2)?$/i.test(n))
+			.map(n => fs.remove(path.join(dir, n)).catch(() => undefined))
+	);
+};
+
 export const syncClient = (opts: SyncOpts): Promise<void> =>
 	new Promise<void>((resolve, reject) => {
 		let child: ChildProcess | undefined;
 		ensureJunction(opts.clientDir)
-			.then(dir => {
+			.then(async dir => {
+				await clearTorrentMetadata(dir);
 				const args = [
 					`--dir=${dir}`,
 					`--seed-time=${opts.seedTime ?? 0}`,
@@ -167,10 +179,10 @@ export const downloadIsComplete = async (): Promise<boolean> => {
 
 export const clearTorrentResumeState = async (): Promise<void> => {
 	const dir = path.join(app.getPath('userData'), 'torrent-root');
-	await Promise.all([
-		fs.remove(path.join(dir, `${TORRENT_NAME}.aria2`)),
-		fs.remove(path.join(dir, `${TORRENT_NAME}.torrent`))
-	]);
+	await fs
+		.remove(path.join(dir, `${TORRENT_NAME}.aria2`))
+		.catch(() => undefined);
+	await clearTorrentMetadata(dir);
 };
 
 export const torrentUrl = (): string | undefined =>
@@ -333,7 +345,7 @@ export const pruneStaleArchives = async (
 
 // files the torrent ships but a mod toggle owns; the sync must not re-add
 // them or count their absence as an incomplete tree
-const LAUNCHER_OWNED_FILES = new Set(['d3d9.dll']);
+const LAUNCHER_OWNED_FILES = new Set(['d3d9.dll', 'realmlist.wtf']);
 const isLauncherOwned = (parts: string[]) =>
 	parts.length === 1 && LAUNCHER_OWNED_FILES.has(parts[0].toLowerCase());
 

@@ -9,6 +9,7 @@ import { PreferencesSchema } from '~common/schemas';
 import { DEFAULT_ENABLED_MODS } from '~common/mods';
 import { omit } from '~common/utils';
 import { isTorrentMode } from '~main/modules/aria2';
+import { getVulkanCapable } from '~main/modules/hardware';
 
 const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
 
@@ -87,16 +88,28 @@ abstract class Preferences {
 		return !settings && !install && !pending;
 	}
 
-	static #withFreshInstallDefaults(data: PreferencesSchema): PreferencesSchema {
+	static #withFreshInstallDefaults(
+		data: PreferencesSchema,
+		vulkanCapable: boolean
+	): PreferencesSchema {
 		if (!this.#freshInstall || Object.keys(data.mods).length) return data;
 
 		// fresh installs seed every mod EXPLICITLY off; a missing row falls
-		// back to enabled, which keeps legacy profiles untouched
+		// back to enabled, which keeps legacy profiles untouched. DXVK is the
+		// exception: on with a verified 32-bit Vulkan driver.
 		const mods = { ...data.mods };
 		for (const id of DEFAULT_ENABLED_MODS)
-			mods[id] = { enabled: false, installedFiles: [], ignoreUpdates: false };
+			mods[id] = {
+				enabled: id === 'dxvk' ? vulkanCapable : false,
+				installedFiles: [],
+				ignoreUpdates: false
+			};
 
-		Logger.info('Fresh install: all mods start disabled (opt-in)');
+		Logger.info(
+			`Fresh install: mods opt-in; dxvk default ${
+				vulkanCapable ? 'ON (Vulkan verified)' : 'OFF (Vulkan not confirmed)'
+			}`
+		);
 		return { ...data, mods };
 	}
 
@@ -140,9 +153,10 @@ abstract class Preferences {
 		});
 
 		const parsed = PreferencesSchema.safeParse(merged);
+		const vulkanCapable = this.#freshInstall ? await getVulkanCapable() : false;
 		if (parsed.success)
 			return this.#withKnownClientDir(
-				this.#withFreshInstallDefaults(parsed.data)
+				this.#withFreshInstallDefaults(parsed.data, vulkanCapable)
 			);
 
 		Logger.warn(

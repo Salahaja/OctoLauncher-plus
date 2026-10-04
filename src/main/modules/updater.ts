@@ -477,6 +477,8 @@ class UpdaterClass extends Observable<UpdaterStatus> {
 				await fs
 					.remove(path.join(clientPath, 'd3d9.dll'))
 					.catch(() => undefined);
+			// realmlist.wtf is launcher-owned, so the torrent can overwrite it
+			await healRealmlist(clientPath).catch(() => undefined);
 			await this.#reconcileClientPatch(clientPath);
 			await this.#reconcileRaidVisuals(clientPath);
 			Preferences.data = {

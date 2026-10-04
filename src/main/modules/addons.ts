@@ -72,12 +72,15 @@ const isAllowedGitUrl = (url: string) => {
 	}
 };
 
+const ADDONS_FETCH_TIMEOUT_MS = 8000;
+
 const fetchAddons = async () => {
 	try {
 		const response = await fetch(
 			`${
 				import.meta.env.MAIN_VITE_SERVER_URL || 'https://octowow.st'
-			}/api/addons.json`
+			}/api/addons.json`,
+			{ timeout: ADDONS_FETCH_TIMEOUT_MS }
 		);
 		return (await response.json()) as AddonsList;
 	} catch (e) {
@@ -143,7 +146,9 @@ class AddonsClass extends Observable<AddonsStatus> {
 			let preview: string | undefined;
 			try {
 				if (isAllowedGitUrl(url)) {
-					const response = await fetch(url).then(r => r.text());
+					const response = await fetch(url, {
+						timeout: ADDONS_FETCH_TIMEOUT_MS
+					}).then(r => r.text());
 					preview = response.match(
 						/property="og:image" content="([^"]*)"/
 					)?.[1];

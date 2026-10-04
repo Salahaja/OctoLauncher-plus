@@ -12,7 +12,10 @@ import { enumerateDisplays } from '~main/modules/displays';
 
 const Servers = {
 	live: {
-		realmList: 'octowow.st',
+		// game auth lives on its own hostname so it can be pointed somewhere
+		// else without moving the website (and vice versa); patchList is the
+		// web host on purpose -- do not "fix" the two back into one value
+		realmList: 'play.octowow.st',
 		patchList: 'octowow.st',
 		realmName: 'OctoWoW'
 	},
@@ -534,7 +537,10 @@ export const ensureDxvkConf = async (clientDir: string) => {
 			'# Cap the texture memory the 32-bit client believes it has so it cannot',
 			'# over-commit its address space (the common DXVK out-of-memory crash).',
 			'd3d9.maxAvailableMemory = 2048',
-			'd3d9.maxFrameLatency = 1',
+			// 2, not 1: keep one frame of CPU/GPU pipelining. latency=1 minimized
+			// input lag but cost average FPS and left no buffer to absorb frametime
+			// spikes (texture-eviction hitches), which read as periodic stutter.
+			'd3d9.maxFrameLatency = 2',
 			'dxvk.numCompilerThreads = 2',
 			'dxvk.logLevel = none',
 			''
