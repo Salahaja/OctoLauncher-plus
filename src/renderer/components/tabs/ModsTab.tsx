@@ -71,7 +71,9 @@ const ModRow = ({ row }: { row: ModRowStatus }) => {
 			<CheckboxInput
 				value={row.ignoreUpdates}
 				setValue={v => setIgnore.mutate({ id: row.id, ignore: v })}
-				label={<span className="s1">{t('mods.ignoreUpdates')}</span>}
+				label={
+					<span className="s1 text-blueGray">{t('mods.ignoreUpdates')}</span>
+				}
 			/>
 		</>
 	);
@@ -214,7 +216,7 @@ const ModsTab = () => {
 			)}
 			{!!status?.missingFiles?.length && (
 				<div className="s1 flex flex-col items-start gap-1 text-orange">
-					<span>
+					<span className="text-size-inherit text-inherit">
 						⚠ {t('mods.missingFiles', { mods: status.missingFiles.join(', ') })}
 					</span>
 					<TextButton

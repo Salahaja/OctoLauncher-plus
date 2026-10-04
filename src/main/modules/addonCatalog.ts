@@ -19,16 +19,10 @@ export type CatalogEntry = {
 
 const FETCH_TIMEOUT_MS = 8000;
 
-// built for Turtle WoW's server or data and broken or wrong on OctoWoW:
-// hidden from the catalog, and flagged if already installed
-export const TURTLE_ONLY = new Set([
-	'AutoLFM',
-	'HCDeaths',
-	'pfQuest-turtle',
-	'TurtleCalendar',
-	'TWThreat',
-	'unitscan-turtle-hc'
-]);
+// superseded on OctoWoW: pfQuest-octo (in pfQuest-octo-plus) is the quest
+// database for this server. Other Turtle-made addons stay listed; OctoWoW
+// serves Turtle's server APIs too (it answers TWThreat's TWT_UDTSv4 request).
+const HIDDEN = new Set(['pfQuest-turtle']);
 
 // every public, non-fork repo of this account with <repo>.toc at its root is
 // one of our addons, so a new one shows up without a launcher release
@@ -151,7 +145,7 @@ export const fetchOfficialAddons = async (): Promise<CatalogEntry[]> => {
 	}
 };
 
-// the official catalog minus the Turtle-only entries, with our addons taking
+// the official catalog minus superseded entries, with our addons taking
 // precedence when a name appears in both
 export const fetchCatalog = async (): Promise<CatalogEntry[]> => {
 	const [official, ours] = await Promise.all([
@@ -160,7 +154,7 @@ export const fetchCatalog = async (): Promise<CatalogEntry[]> => {
 	]);
 	const ourNames = new Set(ours.map(a => a.name));
 	return [
-		...official.filter(a => !TURTLE_ONLY.has(a.name) && !ourNames.has(a.name)),
+		...official.filter(a => !HIDDEN.has(a.name) && !ourNames.has(a.name)),
 		...ours
 	];
 };

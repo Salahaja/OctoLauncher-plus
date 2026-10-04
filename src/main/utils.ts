@@ -16,6 +16,8 @@ const isCallbackResponse = (
 	'args' in data &&
 	Array.isArray((data as { args: unknown }).args);
 
+export const psSingleQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
 export const runWorker = <T>(
 	worker: (o: WorkerOptions) => Worker,
 	workerData: Record<string, unknown>,

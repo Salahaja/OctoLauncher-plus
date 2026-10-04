@@ -1,6 +1,7 @@
 import AddonsTab from './tabs/AddonsTab';
 import ModsTab from './tabs/ModsTab';
 import NewsTab from './tabs/NewsTab';
+import ToolsTab from './tabs/ToolsTab';
 import TweaksTab from './tabs/TweaksTab';
 import TabErrorBoundary from './TabErrorBoundary';
 
@@ -8,7 +9,8 @@ const Tabs = {
 	news: NewsTab,
 	tweaks: TweaksTab,
 	addons: AddonsTab,
-	mods: ModsTab
+	mods: ModsTab,
+	tools: ToolsTab
 } as const;
 
 export const TabNames = Object.keys(Tabs) as TabType[];

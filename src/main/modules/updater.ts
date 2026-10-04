@@ -540,10 +540,13 @@ class UpdaterClass extends Observable<UpdaterStatus> {
 			return;
 		}
 
+		// the files are in use and can't be updated anyway; let a multiboxer
+		// start more clients and check them once everything is closed
 		if (await isGameRunning(path.join(clientPath, 'WoW.exe'))) {
+			Logger.log('WoW is running; skipping the file check');
 			this.status = {
-				state: 'failed',
-				message: 'Please close WoW first, before updating.'
+				state: 'upToDate',
+				message: 'Files are checked when no client is running.'
 			};
 			return;
 		}

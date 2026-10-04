@@ -36,15 +36,17 @@ const ProgressDetails = ({ status }: { status: UpdaterStatus }) => {
 
 	return (
 		<p className="s1 text-blueGray">
-			<span className="tw-color">{pct}</span>
-			<span>
+			<span className="tw-color text-size-inherit">{pct}</span>
+			<span className="text-size-inherit text-inherit">
 				{' '}
 				· {formatFileSize(bytesDone)} / {formatFileSize(bytesTotal)}
 			</span>
 			{bytesPerSecond !== undefined && bytesPerSecond > 0 && (
-				<span> · {formatFileSize(bytesPerSecond, 1)}/s</span>
+				<span className="text-size-inherit text-inherit">
+					· {formatFileSize(bytesPerSecond, 1)}/s
+				</span>
 			)}
-			<span>
+			<span className="text-size-inherit text-inherit">
 				{' · '}
 				{etaSeconds !== undefined
 					? `~${formatDuration(etaSeconds)} ${t('launch.remaining')}`
@@ -155,17 +157,19 @@ const LaunchPanel = () => {
 							status.bytesDone !== undefined &&
 							status.bytesTotal !== undefined && (
 								<>
-									<span className="tw-color">
+									<span className="tw-color text-size-inherit">
 										{formatPercent(status.progress)}
 									</span>
-									<span>
+									<span className="text-size-inherit text-inherit">
 										{' '}
 										· {formatFileSize(status.bytesDone)} /{' '}
 										{formatFileSize(status.bytesTotal)} {t('launch.onDisk')} ·{' '}
 									</span>
 								</>
 							)}
-						<span className="break-all">{status.message}</span>
+						<span className="break-all text-size-inherit text-inherit">
+							{status.message}
+						</span>
 					</p>
 				</div>
 			)

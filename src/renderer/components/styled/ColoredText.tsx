@@ -45,15 +45,17 @@ export const stripColorCodes = (s: string) =>
 export const ColoredText = ({
 	children,
 	className,
-	style
+	style,
+	title
 }: {
 	children: string;
 	className?: string;
 	style?: React.CSSProperties;
+	title?: string;
 }) => {
 	const runs = tokenize(children);
 	return (
-		<p className={className} style={style}>
+		<p className={className} style={style} title={title}>
 			{runs.map((r, i) =>
 				r.color ? (
 					<span
@@ -64,7 +66,9 @@ export const ColoredText = ({
 						{r.text}
 					</span>
 				) : (
-					<span key={i}>{r.text}</span>
+					<span key={i} className="text-size-inherit text-inherit">
+						{r.text}
+					</span>
 				)
 			)}
 		</p>

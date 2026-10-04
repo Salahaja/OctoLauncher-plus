@@ -33,6 +33,8 @@ electronLanguages: en
 extraResources:
   - from: resources/aria2c.exe
     to: aria2c.exe
+  - from: resources/tools
+    to: tools
 win:
   artifactName: ${productName}.${ext}
   target:

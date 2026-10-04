@@ -13,4 +13,7 @@ interface ImportMetaEnv {
 	readonly MAIN_VITE_RAID_VISUALS_URL: string;
 	// the content patch (patch-5.mpq), served outside the torrent; kept current by a ".sha256" sidecar
 	readonly MAIN_VITE_CLIENT_PATCH_URL: string;
+	// generic electron-updater feed for launcher self-updates; unset turns them
+	// off, so this build never "updates" itself back to the official launcher
+	readonly MAIN_VITE_UPDATE_FEED_URL: string;
 }

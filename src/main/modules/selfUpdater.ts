@@ -46,8 +46,15 @@ class SelfUpdaterClass extends Observable<SelfUpdaterStatus> {
 			return;
 		}
 
+		const feedUrl = import.meta.env.MAIN_VITE_UPDATE_FEED_URL;
+		if (!feedUrl) {
+			Logger.info('[selfUpdater] no update feed configured, skipping');
+			return;
+		}
+
 		const currentVersion = app.getVersion();
 
+		autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
 		autoUpdater.logger = Logger;
 		autoUpdater.autoDownload = true;
 		autoUpdater.autoInstallOnAppQuit = false;

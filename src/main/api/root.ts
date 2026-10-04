@@ -9,6 +9,7 @@ import { newsRouter } from './routers/news';
 import { forumRouter } from './routers/forum';
 import { modsRouter } from './routers/mods';
 import { selfUpdaterRouter } from './routers/selfUpdater';
+import { serverRouter } from './routers/server';
 
 export const appRouter = createTRPCRouter({
 	addons: addonsRouter,
@@ -20,7 +21,8 @@ export const appRouter = createTRPCRouter({
 	news: newsRouter,
 	forum: forumRouter,
 	mods: modsRouter,
-	selfUpdater: selfUpdaterRouter
+	selfUpdater: selfUpdaterRouter,
+	server: serverRouter
 });
 
 export type AppRouter = typeof appRouter;

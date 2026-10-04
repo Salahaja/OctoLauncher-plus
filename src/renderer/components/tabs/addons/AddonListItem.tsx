@@ -11,7 +11,10 @@ import cls from 'classnames';
 import { type AddonData } from '~main/types';
 import { api } from '~renderer/utils/api';
 import TextButton from '~renderer/components/styled/TextButton';
-import { ColoredText } from '~renderer/components/styled/ColoredText';
+import {
+	ColoredText,
+	stripColorCodes
+} from '~renderer/components/styled/ColoredText';
 import IconSpinner from '~renderer/components/styled/IconSpinner';
 import DialogButton from '~renderer/components/styled/DialogButton';
 import { isNotUndef } from '~common/utils';
@@ -58,12 +61,6 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 	}));
 
 	const warnings = [
-		addon.turtleOnly
-			? {
-					full: t('addons.warnTurtleFull'),
-					short: t('addons.warnTurtleShort')
-			  }
-			: undefined,
 		addon.toc && addon.toc?.Interface !== '11200'
 			? {
 					full: t('addons.warnIncorrectVersionFull', {
@@ -136,10 +133,15 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 			)}
 
 			<div
-				className="-ml-2 flex items-center gap-1 whitespace-nowrap"
+				className="-ml-2 flex min-w-0 items-center gap-1 whitespace-nowrap"
 				style={{ gridRow: row + 1, gridColumn: 2 }}
 			>
-				<ColoredText>{addon.toc?.Title ?? addon.folder}</ColoredText>
+				<ColoredText
+					className="min-w-0 truncate"
+					title={stripColorCodes(addon.toc?.Title ?? addon.folder)}
+				>
+					{addon.toc?.Title ?? addon.folder}
+				</ColoredText>
 				{repoUrl && (
 					<TextButton
 						icon={Github}
@@ -152,8 +154,9 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 			</div>
 
 			<ColoredText
-				className="s1 py-1 text-blueGray"
+				className="s1 line-clamp-2 py-1 text-blueGray"
 				style={{ gridRow: row + 1, gridColumn: 3 }}
+				title={stripColorCodes(addon.toc?.Notes ?? addon.description ?? '')}
 			>
 				{addon.toc?.Notes ?? addon.description ?? ''}
 			</ColoredText>

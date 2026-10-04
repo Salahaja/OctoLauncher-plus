@@ -28,7 +28,8 @@ const AddonList = ({ title, addons, dependencies }: Props) => {
 			</button>
 			<div
 				className={cls(
-					'grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-3 gap-y-1',
+					// fixed name column so every section's descriptions line up
+					'grid grid-cols-[auto_17rem_1fr_auto] items-center gap-x-3 gap-y-1',
 					!open && 'hidden'
 				)}
 			>

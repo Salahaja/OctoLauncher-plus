@@ -14,7 +14,7 @@ import gitClone from '~main/workers/gitClone?nodeWorker';
 
 import Preferences from './preferences';
 import Observable from './observable';
-import { TURTLE_ONLY, fetchCatalog, readTocData } from './addonCatalog';
+import { fetchCatalog, readTocData } from './addonCatalog';
 
 export type AddonsStatus = {
 	state: 'verifying' | 'done';
@@ -186,10 +186,7 @@ class AddonsClass extends Observable<AddonsStatus> {
 				.catch(() => null);
 
 			const avail = remoteAddons.find(a => a.name === folder);
-			const tags = {
-				ours: avail?.ours,
-				turtleOnly: TURTLE_ONLY.has(folder) || undefined
-			};
+			const tags = { ours: avail?.ours };
 			if (!remote) {
 				Logger.log(`Addon "${folder}" is not a git repository`);
 				this.#setAddon(

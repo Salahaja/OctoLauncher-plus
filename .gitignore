@@ -8,6 +8,9 @@ release/
 
 Tools/launcher/node/
 
+# third-party binary; copy it from an installed OctoLauncher's resources folder
+resources/aria2c.exe
+
 .env
 .env.local
 

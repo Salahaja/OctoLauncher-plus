@@ -113,7 +113,6 @@ export const AddonDataSchema = z.object({
 	]),
 	git: z.string().optional(),
 	ours: z.boolean().optional(),
-	turtleOnly: z.boolean().optional(),
 	toc: TocDataSchema.optional(),
 	description: z.string().optional(),
 	error: z.string().optional(),

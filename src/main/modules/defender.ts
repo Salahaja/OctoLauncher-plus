@@ -6,11 +6,11 @@ import path from 'node:path';
 import { app } from 'electron';
 import Logger from 'electron-log/main';
 
+import { psSingleQuote } from '~main/utils';
+
 import Preferences from './preferences';
 
 export type ExclusionResult = { ok: boolean; error?: string; paths?: string[] };
-
-const psSingleQuote = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export const addDefenderExclusions = async (): Promise<ExclusionResult> => {
 	if (os.platform() !== 'win32')
