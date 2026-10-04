@@ -71,8 +71,21 @@ const LaunchPanel = () => {
 
 	const verify = api.updater.verify.useMutation();
 	const update = api.updater.update.useMutation();
-	const start = api.launcher.start.useMutation();
+	const { data: running = 0, refetch: refetchRunning } =
+		api.launcher.running.useQuery(undefined, { refetchInterval: 5000 });
+	const start = api.launcher.start.useMutation({
+		// the new client takes a moment to show up in the process list
+		onSuccess: () => setTimeout(() => refetchRunning(), 3000)
+	});
 	const applyMods = api.mods.applyAll.useMutation();
+
+	const playLabel = running > 0 ? t('launch.playAnother') : t('launch.play');
+	const runningText =
+		running === 1
+			? t('launch.runningOne')
+			: running > 1
+			? t('launch.runningMany', { count: running })
+			: undefined;
 
 	const modRows = modsStatus?.mods ?? [];
 	const enabledIds = new Set(modRows.filter(m => m.enabled).map(m => m.id));
@@ -93,7 +106,7 @@ const LaunchPanel = () => {
 		serverUnreachable: {
 			button: pref?.version ? (
 				<Button disabled={start.isLoading} onClick={() => start.mutateAsync()}>
-					{t('launch.play')}
+					{playLabel}
 				</Button>
 			) : (
 				<Button onClick={() => verify.mutateAsync()}>
@@ -169,7 +182,9 @@ const LaunchPanel = () => {
 			)
 		},
 		upToDate: {
-			button: modsStatus?.dirty ? (
+			// mods can't be applied over a running client, so keep offering
+			// another launch until they're all closed
+			button: modsStatus?.dirty && running === 0 ? (
 				<Button
 					primary
 					onClick={() => applyMods.mutateAsync()}
@@ -189,12 +204,14 @@ const LaunchPanel = () => {
 					disabled={start.isLoading}
 					onClick={() => start.mutateAsync()}
 				>
-					{t('launch.play')}
+					{playLabel}
 				</Button>
 			),
 			helperText: (
 				<div className="-mb-2">
-					{modsStatus?.dirty ? (
+					{runningText ? (
+						<p>{runningText}</p>
+					) : modsStatus?.dirty ? (
 						missingDeps.length ? (
 							<p className="text-orange">
 								{t('mods.enableRequired', {

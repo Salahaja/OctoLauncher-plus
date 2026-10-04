@@ -7,48 +7,20 @@ import fetch from 'node-fetch';
 import Logger from 'electron-log/main';
 
 import { isNotUndef } from '~common/utils';
-import { type AddonData, type TocData } from '~common/schemas';
+import { type AddonData } from '~common/schemas';
 import { runWorker } from '~main/utils';
 import gitPull from '~main/workers/gitPull?nodeWorker';
 import gitClone from '~main/workers/gitClone?nodeWorker';
 
 import Preferences from './preferences';
 import Observable from './observable';
+import { TURTLE_ONLY, fetchCatalog, readTocData } from './addonCatalog';
 
 export type AddonsStatus = {
 	state: 'verifying' | 'done';
 	addons: { [name: string]: AddonData };
 	available: AddonData[];
 };
-
-type AddonsList = {
-	name: string;
-	owner: string;
-	branch?: string;
-	ref?: string;
-	git: string;
-	toc?: TocData;
-	description?: string;
-	lastUpdated?: string;
-	stars?: number;
-	dependencies?: string[];
-}[];
-
-const readTocData = (content: string) =>
-	(content.charCodeAt(0) === 0xfeff ? content.slice(1) : content)
-		.split('\n')
-		.filter(l => l.startsWith('## '))
-		.map(l => l.slice(3))
-		.map(l => {
-			const idx = l.indexOf(':');
-			if (idx === -1) return null;
-			return [l.slice(0, idx).trim(), l.slice(idx + 1).trim()] as const;
-		})
-		.filter((e): e is readonly [string, string] => !!e)
-		.reduce((acc, [key, value]) => {
-			acc[key] = value;
-			return acc;
-		}, {} as TocData);
 
 const isUnsafeFolder = (name?: string) =>
 	!name || name === '.' || name === '..' || /[/\\]/.test(name);
@@ -73,21 +45,6 @@ const isAllowedGitUrl = (url: string) => {
 };
 
 const ADDONS_FETCH_TIMEOUT_MS = 8000;
-
-const fetchAddons = async () => {
-	try {
-		const response = await fetch(
-			`${
-				import.meta.env.MAIN_VITE_SERVER_URL || 'https://octowow.st'
-			}/api/addons.json`,
-			{ timeout: ADDONS_FETCH_TIMEOUT_MS }
-		);
-		return (await response.json()) as AddonsList;
-	} catch (e) {
-		Logger.error('Failed to reach update server', e);
-		return [];
-	}
-};
 
 class AddonsClass extends Observable<AddonsStatus> {
 	protected _value: AddonsStatus = {
@@ -177,7 +134,7 @@ class AddonsClass extends Observable<AddonsStatus> {
 			state: 'verifying'
 		};
 
-		const remoteAddons = await fetchAddons();
+		const remoteAddons = await fetchCatalog();
 		const available: AddonData[] = remoteAddons.map(a => ({
 			status: 'available',
 			git: a.git,
@@ -185,7 +142,8 @@ class AddonsClass extends Observable<AddonsStatus> {
 			description: a.description,
 			folder: a.name,
 			branch: a.branch,
-			ref: a.ref
+			ref: a.ref,
+			ours: a.ours
 		}));
 
 		const clientPath = Preferences.data.clientDir;
@@ -228,6 +186,10 @@ class AddonsClass extends Observable<AddonsStatus> {
 				.catch(() => null);
 
 			const avail = remoteAddons.find(a => a.name === folder);
+			const tags = {
+				ours: avail?.ours,
+				turtleOnly: TURTLE_ONLY.has(folder) || undefined
+			};
 			if (!remote) {
 				Logger.log(`Addon "${folder}" is not a git repository`);
 				this.#setAddon(
@@ -238,9 +200,10 @@ class AddonsClass extends Observable<AddonsStatus> {
 								git: avail.git,
 								toc,
 								description: avail.description,
-								folder
+								folder,
+								...tags
 						  }
-						: { status: 'unknown', toc, folder }
+						: { status: 'unknown', toc, folder, ...tags }
 				);
 				return;
 			}
@@ -267,19 +230,48 @@ class AddonsClass extends Observable<AddonsStatus> {
 					([_, HEAD, index, workdir]) => HEAD !== index || index !== workdir
 				);
 
+				// an update is a forced checkout of the remote: it throws away
+				// uncommitted edits and any commit the remote doesn't have, so
+				// those addons are held back from "Update all"
+				const hasLocalCommits =
+					!!localCommit &&
+					!!remoteCommit &&
+					localCommit !== remoteCommit &&
+					!(await git
+						.isDescendent({
+							fs,
+							dir,
+							oid: remoteCommit,
+							ancestor: localCommit,
+							depth: -1
+						})
+						.catch(() => false));
+
 				const isUpToDate =
 					!hasChanges && remoteCommit && localCommit === remoteCommit;
+				// a translation key, shown in place of the up-to-date text
+				const modified = hasChanges
+					? 'localChanges'
+					: hasLocalCommits
+					? 'unpushedCommits'
+					: undefined;
 				this.#setAddon(folder, {
 					git: remote.url,
-					status: isUpToDate ? 'upToDate' : 'outOfDate',
+					status: modified ? 'modified' : isUpToDate ? 'upToDate' : 'outOfDate',
+					error: modified,
 					toc,
 					description: avail?.description,
 					ref: avail?.ref,
-					folder
+					folder,
+					...tags
 				});
 
 				Logger.log(
-					isUpToDate
+					modified
+						? `Addon "${folder}" has ${
+								hasChanges ? 'local changes' : 'unpushed commits'
+						  }; not updating it automatically`
+						: isUpToDate
 						? `Addon "${folder}" is up to date${
 								avail?.ref ? ` (pinned ${avail.ref})` : ''
 						  }`
@@ -370,7 +362,12 @@ class AddonsClass extends Observable<AddonsStatus> {
 					await fs.readFile(path.join(dir, `${folder}.toc`), 'utf-8')
 				);
 
-				this.#setAddon(folder, { ...data, toc, status: 'upToDate' });
+				this.#setAddon(folder, {
+					...data,
+					toc,
+					status: 'upToDate',
+					error: undefined
+				});
 				Logger.log(`Updated addon "${folder}"`);
 			} catch (e) {
 				this.#setAddon(folder, {
@@ -430,7 +427,12 @@ class AddonsClass extends Observable<AddonsStatus> {
 			const toc = await readTocData(
 				await fs.readFile(path.join(dir, `${data.folder}.toc`), 'utf-8')
 			);
-			this.#setAddon(data.folder, { ...data, toc, status: 'upToDate' });
+			this.#setAddon(data.folder, {
+				...data,
+				toc,
+				status: 'upToDate',
+				error: undefined
+			});
 			Logger.log(`Installed addon "${data.folder}"`);
 		} catch (e) {
 			this.#setAddon(data.folder, {

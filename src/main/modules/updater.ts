@@ -82,6 +82,30 @@ const ownedDataArchives = async (): Promise<Set<string>> => {
 	}
 };
 
+// how many copies of the client are open; multiboxers run several at once
+export const countGameProcesses = (executablePath: string) =>
+	os.platform() === 'win32'
+		? new Promise<number>(resolve => {
+				const exeName = path.basename(executablePath).toLowerCase();
+				exec(
+					`tasklist /FI "IMAGENAME eq ${exeName}" /FO CSV /NH`,
+					(error, stdout) => {
+						if (error) {
+							Logger.warn(`tasklist count for "${exeName}" failed`, error);
+							resolve(0);
+							return;
+						}
+						resolve(
+							stdout
+								.toLowerCase()
+								.split(/\r?\n/)
+								.filter(l => l.startsWith(`"${exeName}"`)).length
+						);
+					}
+				);
+		  })
+		: Promise.resolve(0);
+
 export const isGameRunning = (executablePath: string) =>
 	os.platform() === 'win32'
 		? new Promise<boolean>(resolve => {

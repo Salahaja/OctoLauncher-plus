@@ -17,6 +17,9 @@ const enUS: Dict = {
 	'quit.return': 'Return',
 	'launch.verifying': 'Verifying',
 	'launch.play': 'Play',
+	'launch.playAnother': 'Launch another',
+	'launch.runningOne': '1 client running',
+	'launch.runningMany': '{count} clients running',
 	'launch.retry': 'Retry',
 	'launch.install': 'Install',
 	'launch.update': 'Update',
@@ -173,6 +176,7 @@ const enUS: Dict = {
 		'This is the same thing you would do by hand under Windows Security, Virus and threat protection, Exclusions. It installs nothing, runs no third-party software, and changes nothing outside those specific paths.',
 	'av.back': 'Back',
 	'addons.sectionInstalled': 'Installed',
+	'addons.sectionOurs': 'Our addons',
 	'addons.sectionRecommended': 'Recommended',
 	'addons.sectionAvailable': 'Available',
 	'addons.checkForUpdates': 'Check for updates',
@@ -190,6 +194,15 @@ const enUS: Dict = {
 	'addons.warnMissingDependenciesFull':
 		'This addon has missing dependencies: {deps}',
 	'addons.warnMissingDependenciesShort': 'Missing dependencies',
+	'addons.warnTurtleFull':
+		"Made for Turtle WoW. It relies on Turtle's server or data and may not work on OctoWoW.",
+	'addons.warnTurtleShort': 'Turtle WoW only',
+	'addons.localChanges': 'Local changes',
+	'addons.unpushedCommits': 'Unpushed commits',
+	'addons.discardTitle': 'Discard local changes?',
+	'addons.discardBody':
+		'Updating {folder} replaces it with the published version. Uncommitted edits and unpushed commits in that folder will be lost.',
+	'addons.discardConfirm': 'Discard and update',
 	'addons.details': 'Details',
 	'addons.openOnGithub': 'Open {url} on GitHub',
 	'addons.upToDate': 'Up to date',

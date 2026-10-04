@@ -7,7 +7,10 @@ import Logger from 'electron-log/main';
 import Preferences from '~main/modules/preferences';
 import Mods from '~main/modules/mods';
 import { mainWindow } from '~main/index';
-import Updater, { isGameRunning } from '~main/modules/updater';
+import Updater, {
+	countGameProcesses,
+	isGameRunning
+} from '~main/modules/updater';
 import {
 	patchConfig,
 	patchExecutable,
@@ -40,8 +43,33 @@ type StartResult = { ok: boolean; error?: string };
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 let starting = false;
+let watchingClients = false;
+
+// one watcher covers every open client: the launcher comes back from the
+// tray only once the last of them has closed
+const restoreWhenAllClosed = (exePath: string) => {
+	if (watchingClients) return;
+	watchingClients = true;
+	void (async () => {
+		try {
+			const started = Date.now();
+			while (Date.now() - started < 30_000 && !(await isGameRunning(exePath)))
+				await delay(1000);
+			while (await isGameRunning(exePath)) await delay(3000);
+		} finally {
+			watchingClients = false;
+			Logger.log('All WoW clients closed');
+			restoreFromTray();
+		}
+	})();
+};
 
 export const launcherRouter = createTRPCRouter({
+	running: publicProcedure.query(async () => {
+		const { clientDir } = Preferences.data;
+		if (!clientDir) return 0;
+		return countGameProcesses(path.join(clientDir, 'WoW.exe'));
+	}),
 	start: publicProcedure.mutation(async (): Promise<StartResult> => {
 		if (starting) return { ok: false, error: 'The game is already launching.' };
 		starting = true;
@@ -55,10 +83,13 @@ export const launcherRouter = createTRPCRouter({
 					ok: false,
 					error: 'WoW.exe was not found in the game folder.'
 				};
-			if (await isGameRunning(exePath))
-				return { ok: false, error: 'WoW is already running.' };
 
-			if (Mods.status.dirty)
+			// with a client already open, everything that rewrites the client's
+			// files would fight it (WoW.exe and the mod DLLs are locked, and it
+			// rewrites Config.wtf when it exits), so just start one more
+			const additional = await isGameRunning(exePath);
+
+			if (!additional && Mods.status.dirty)
 				return {
 					ok: false,
 					error: 'You have unapplied mod changes. Click Apply first.'
@@ -66,42 +97,46 @@ export const launcherRouter = createTRPCRouter({
 
 			stopSeeding();
 
-			if (cleanWdb) {
-				Logger.log('Cleaning up WDB...');
-				await fs.remove(path.join(clientDir, 'WDB'));
-			}
+			if (additional) {
+				Logger.log('WoW is already running; starting another client');
+			} else {
+				if (cleanWdb) {
+					Logger.log('Cleaning up WDB...');
+					await fs.remove(path.join(clientDir, 'WDB'));
+				}
 
-			Logger.log('Syncing preferred monitor...');
-			await Mods.verify();
+				Logger.log('Syncing preferred monitor...');
+				await Mods.verify();
 
-			Logger.log('Checking Config.wtf...');
-			await patchConfig();
-			await ensureDxvkConf(clientDir);
+				Logger.log('Checking Config.wtf...');
+				await patchConfig();
+				await ensureDxvkConf(clientDir);
 
-			await removeLegacyLocalePatches(clientDir);
+				await removeLegacyLocalePatches(clientDir);
 
-			if (Preferences.data.patchedLocale !== Preferences.data.locale) {
-				Logger.log(
-					`Applying the client language (${Preferences.data.locale})...`
-				);
-				try {
-					await patchExecutable();
-					await patchConfig(true);
-					await Updater.recordPatchedWow();
-					if (!cleanWdb)
-						await fs.remove(path.join(clientDir, 'WDB')).catch(() => {});
-				} catch (e) {
-					Logger.error(
-						'Could not apply the client language; launching with the previous one',
-						e
+				if (Preferences.data.patchedLocale !== Preferences.data.locale) {
+					Logger.log(
+						`Applying the client language (${Preferences.data.locale})...`
 					);
+					try {
+						await patchExecutable();
+						await patchConfig(true);
+						await Updater.recordPatchedWow();
+						if (!cleanWdb)
+							await fs.remove(path.join(clientDir, 'WDB')).catch(() => {});
+					} catch (e) {
+						Logger.error(
+							'Could not apply the client language; launching with the previous one',
+							e
+						);
+					}
 				}
 			}
 
 			const loaderPath = path.join(clientDir, 'VanillaFixes.exe');
 			const needsLoader = await chainloaderNeeded(clientDir);
 			const useLoader = needsLoader && (await fs.pathExists(loaderPath));
-			if (useLoader) await syncVanillaFixesCache(clientDir);
+			if (useLoader && !additional) await syncVanillaFixesCache(clientDir);
 			if (needsLoader && !useLoader)
 				Logger.warn(
 					'VanillaFixes.exe is missing but mods/dlls.txt expect a chainloader; ' +
@@ -140,27 +175,7 @@ export const launcherRouter = createTRPCRouter({
 			}
 
 			minimizeToTray();
-			if (useLoader) {
-				void (async () => {
-					try {
-						const started = Date.now();
-						while (
-							Date.now() - started < 30_000 &&
-							!(await isGameRunning(exePath))
-						)
-							await delay(1000);
-						while (await isGameRunning(exePath)) await delay(3000);
-					} finally {
-						Logger.log('WoW stopped');
-						restoreFromTray();
-					}
-				})();
-			} else {
-				child.on('exit', () => {
-					Logger.log('WoW stopped');
-					restoreFromTray();
-				});
-			}
+			restoreWhenAllClosed(exePath);
 			return { ok: true };
 		} catch (e) {
 			Logger.error('Failed to start the game', e);

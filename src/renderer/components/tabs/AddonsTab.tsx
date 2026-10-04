@@ -18,11 +18,19 @@ const RECOMMENDED = new Set([
 	'AtlasLoot',
 	'pfExtend',
 	'pfQuest',
-	'pfQuest-turtle',
 	'SellValue',
 	'ShaguTweaks',
 	'ShaguTweaks-extras',
 	'TurtleMail'
+]);
+
+// present in the AddOns folder, whatever its update state
+const INSTALLED_STATES = new Set<AddonData['status']>([
+	'fetching',
+	'unknown',
+	'upToDate',
+	'outOfDate',
+	'modified'
 ]);
 
 const localeFilter = (l: AddonData[], filter: string) => {
@@ -55,9 +63,10 @@ const AddonsTab = () => {
 		...data.available.map(a => [a.folder, 'available']),
 		...Object.values(data.addons).map(a => [
 			a.folder,
-			a.progress ?? (a.status === 'upToDate' ? 'installed' : 'available')
+			a.progress ?? (INSTALLED_STATES.has(a.status) ? 'installed' : 'available')
 		])
 	]);
+	const notInstalled = data.available.filter(a => !(a.folder in data.addons));
 
 	const [filter, setFilter] = useState('');
 
@@ -78,11 +87,17 @@ const AddonsTab = () => {
 					dependencies={dependencies}
 				/>
 				<AddonList
+					title={t('addons.sectionOurs')}
+					addons={localeFilter(
+						notInstalled.filter(a => a.ours),
+						filter
+					)}
+					dependencies={dependencies}
+				/>
+				<AddonList
 					title={t('addons.sectionRecommended')}
 					addons={localeFilter(
-						data.available.filter(
-							a => !(a.folder in data.addons) && RECOMMENDED.has(a.folder)
-						),
+						notInstalled.filter(a => !a.ours && RECOMMENDED.has(a.folder)),
 						filter
 					)}
 					dependencies={dependencies}
@@ -90,9 +105,7 @@ const AddonsTab = () => {
 				<AddonList
 					title={t('addons.sectionAvailable')}
 					addons={localeFilter(
-						data.available.filter(
-							a => !(a.folder in data.addons) && !RECOMMENDED.has(a.folder)
-						),
+						notInstalled.filter(a => !a.ours && !RECOMMENDED.has(a.folder)),
 						filter
 					)}
 					dependencies={dependencies}

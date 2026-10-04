@@ -58,6 +58,12 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 	}));
 
 	const warnings = [
+		addon.turtleOnly
+			? {
+					full: t('addons.warnTurtleFull'),
+					short: t('addons.warnTurtleShort')
+			  }
+			: undefined,
 		addon.toc && addon.toc?.Interface !== '11200'
 			? {
 					full: t('addons.warnIncorrectVersionFull', {
@@ -163,6 +169,8 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 					</>
 				) : addon.status === 'invalid' ? (
 					<p className="s1 text-red">{addon.error}</p>
+				) : addon.status === 'modified' ? (
+					<p className="s1 text-yellow">{t(`addons.${addon.error}`)}</p>
 				) : warnings.length ? (
 					<p className="s1 text-yellow">{warnings[0].short}</p>
 				) : (
@@ -181,6 +189,40 @@ const AddonListItem = ({ row, dependencies, ...addon }: Props) => {
 					>
 						{t('addons.update')}
 					</TextButton>
+				)}
+				{addon.status === 'modified' && (
+					<DialogButton
+						clickAway
+						dialog={close => (
+							<div className="tw-dialog">
+								<CloseButton close={close} />
+								<h4 className="tw-color">{t('addons.discardTitle')}</h4>
+								<hr />
+								<p className="text-blueGray">
+									{t('addons.discardBody', { folder: addon.folder })}
+								</p>
+								<TextButton
+									icon={DownloadCloud}
+									onClick={async () => {
+										close();
+										await update.mutateAsync({ toUpdate: [addon.folder] });
+									}}
+									className="self-end text-yellow"
+								>
+									{t('addons.discardConfirm')}
+								</TextButton>
+							</div>
+						)}
+					>
+						{open => (
+							<TextButton
+								onClick={open}
+								className="s1 -mx-2 justify-self-end"
+							>
+								{t('addons.update')}
+							</TextButton>
+						)}
+					</DialogButton>
 				)}
 				{addon.status === 'available' ? (
 					<TextButton
