@@ -12,6 +12,20 @@ Desktop launcher for the OctoWoW (World of Warcraft 1.12.1 private server) clien
 
 ---
 
+## This fork (1.3.8-plus)
+
+Built on the official 1.3.8: the public source stops at 1.3.6, and the 1.3.7–1.3.8 changes were recovered from the shipped `app.asar`, so it behaves as the official build does. On top of that:
+
+- **Several clients at once.** With WoW already running, Play becomes *Launch another*: it starts one more client and skips everything that would rewrite files the open clients hold. The launcher returns from the tray when the last one closes, and checks files then.
+- **Tools tab.** Live player count, the realm addresses OctoWoW's DNS (37.156.68.20) gives next to what the hosts file pins, a login-port probe for each, and a plain verdict. *Pin server addresses* runs the bundled [octowow-hosts-updater](https://github.com/Salahaja/octowow-hosts-updater) script elevated; *Remove pins* takes the block out again. *Wait, then launch* polls the login port and starts the game when it answers.
+- **Our addons.** Every public, non-fork repo of `Salahaja` with a root `.toc` is listed in its own section, found through the GitHub API, so new ones appear without a launcher release. pfQuest-turtle is hidden from the catalog in favour of pfQuest [Octo DB+].
+- **Local work is safe.** An addon with uncommitted edits or unpushed commits shows *Local changes* and is left out of *Update all*; updating it asks first.
+- **No self-update to the official build**, which would undo all of this. Set `MAIN_VITE_UPDATE_FEED_URL` at build time to point self-updates at a feed of your own.
+
+Building it is as below, plus one file the source tree doesn't carry: copy `aria2c.exe` from an installed launcher's `resources` folder into `resources/`.
+
+---
+
 ## Quick start (players)
 
 1. Grab `OctoLauncher.exe` (portable) or `OctoLauncher_Installer.exe` from the [Releases](../../releases) page.
