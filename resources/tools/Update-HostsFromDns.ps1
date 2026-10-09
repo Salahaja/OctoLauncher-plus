@@ -168,7 +168,10 @@ function Resolve-NameAgainstServer {
         }
     }
     else {
-        # Fallback for hosts without the DnsClient module.
+        # Fallback for hosts without the DnsClient module (Windows 7). nslookup prints
+        # "Non-authoritative answer:" on stderr, and Windows PowerShell turns that into a
+        # terminating error under the script's 'Stop' preference - so relax it here.
+        $ErrorActionPreference = 'Continue'
         $raw = & nslookup.exe "-type=A" $HostName $DnsServer 2>$null
         $lines = @($raw) -split "`r?`n"
         $start = -1
@@ -211,7 +214,13 @@ function Test-AddressReachable {
         $client = New-Object System.Net.Sockets.TcpClient
         $ok = $false
         try {
-            $ok = $client.ConnectAsync($IPAddress, $Port).Wait($TimeoutMs) -and $client.Connected
+            # BeginConnect, not ConnectAsync: Windows 7's PowerShell 2.0 runs on .NET 2/3.5,
+            # which has no ConnectAsync - every probe would fail and drop good addresses.
+            $pending = $client.BeginConnect($IPAddress, $Port, $null, $null)
+            if ($pending.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+                $client.EndConnect($pending)
+                $ok = $client.Connected
+            }
         }
         catch {
             $ok = $false
@@ -401,7 +410,8 @@ try {
 
             $conflictCount++
             if (-not $KeepConflicting -and $clashing.Count -eq $lineHosts.Count) {
-                $verb = if ($WhatIfPreference) { 'Would comment out' } else { 'Commenting out' }
+                $verb = 'Commenting out'
+                if ($WhatIfPreference) { $verb = 'Would comment out' }
                 $existing[$i] = "# {0}   # disabled by Update-HostsFromDns.ps1 {1}" -f $line.Trim(), (Get-Date -Format 'yyyy-MM-dd')
                 Write-Host ("  {0} stale line {1}: {2}" -f $verb, ($i + 1), $line.Trim()) -ForegroundColor Yellow
             }
@@ -479,7 +489,7 @@ try {
         if ($FirstOnly) { $addresses = @($addresses[0]) }
 
         foreach ($ip in $addresses) {
-            [void]$entries.Add([pscustomobject]@{ IPAddress = $ip; HostName = $hostName })
+            [void]$entries.Add((New-Object PSObject -Property @{ IPAddress = $ip; HostName = $hostName }))
         }
     }
 
@@ -547,7 +557,8 @@ try {
     Write-Host ''
     $entries | Format-Table -AutoSize IPAddress, HostName | Out-Host
     Write-Host ('Updated {0}' -f $targetFull) -ForegroundColor Green
-    $verifyNote = if ($SkipVerify) { '' } else { (', {0} dropped as unreachable' -f $droppedDead) }
+    $verifyNote = ''
+    if (-not $SkipVerify) { $verifyNote = ', {0} dropped as unreachable' -f $droppedDead }
     Write-Host ('  {0} resolved, {1} reused from the previous block, {2} failed{3}.' -f $resolved, $reused, $failed, $verifyNote)
 
     if (-not $NoFlush) {

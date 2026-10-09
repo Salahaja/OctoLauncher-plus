@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'child_process';
 
 import { app } from 'electron';
 import fs from 'fs-extra';
+import fetch from 'node-fetch';
 import Logger from 'electron-log/main';
 
 import { mapPort, type PortMapping } from './upnp';

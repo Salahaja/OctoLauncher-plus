@@ -30,6 +30,16 @@ export const addDefenderExclusions = async (): Promise<ExclusionResult> => {
 		process.env.PORTABLE_EXECUTABLE_DIR ?? path.dirname(app.getPath('exe'));
 	const paths = [...new Set([clientDir, launcherDir])];
 
+	// Windows 7 (and Vista) have no Defender cmdlets to call: their Defender is
+	// antispyware only, and the antivirus is whatever the user installed
+	if (/^6\.[01]\./.test(os.release()))
+		return {
+			ok: false,
+			error: `Windows 7 can't add this automatically. In your antivirus program, add these folders as exclusions: ${paths.join(
+				' and '
+			)}`
+		};
+
 	const resultFile = path.join(
 		os.tmpdir(),
 		`octo-defender-${process.pid}-${Date.now()}.txt`

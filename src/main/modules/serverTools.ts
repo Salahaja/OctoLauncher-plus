@@ -193,7 +193,10 @@ const runElevated = (snippet: string): Promise<ElevatedResult> => {
 		`octo-elevated-${process.pid}-${Date.now()}.log`
 	);
 	const inner = [
-		`Start-Transcript -LiteralPath ${psSingleQuote(transcript)} -Force | Out-Null`,
+		// -LiteralPath only came with PowerShell 3; Windows 7 ships 2.0, and the
+		// path (the temp folder) has no wildcard characters to protect
+		`$octoTranscript = ${psSingleQuote(transcript)}`,
+		'if ($PSVersionTable.PSVersion.Major -ge 3) { Start-Transcript -LiteralPath $octoTranscript -Force | Out-Null } else { Start-Transcript -Path $octoTranscript -Force | Out-Null }',
 		'$code = 0',
 		'try {',
 		`  ${snippet}`,
@@ -223,9 +226,14 @@ const runElevated = (snippet: string): Promise<ElevatedResult> => {
 			resolve({ ok: false, output: 'Could not run Windows PowerShell.' });
 		});
 		child.on('exit', async code => {
-			const raw = (await fs.readFile(transcript, 'utf8').catch(() => ''))
-				// the transcript starts with a BOM, which would hide the first rule
-				.replace(/^\uFEFF/, '');
+			const bytes = await fs.readFile(transcript).catch(() => Buffer.alloc(0));
+			// PowerShell 2.0 (Windows 7) writes the transcript as UTF-16, later
+			// ones as UTF-8; either starts with a BOM, which would hide the first rule
+			const raw = (
+				bytes[0] === 0xff && bytes[1] === 0xfe
+					? bytes.toString('utf16le')
+					: bytes.toString('utf8')
+			).replace(/^\uFEFF/, '');
 			await fs.remove(transcript).catch(() => undefined);
 			// keep what the snippet printed, not the transcript's header/footer
 			const parts = raw.split(/^\*{10,}\s*$/m);
