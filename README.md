@@ -25,6 +25,14 @@ The official launcher and `main` use Electron 27, whose Chromium (118) dropped W
 - **No self-update:** like `main`, it never updates itself, which matters doubly here, since an official update would install an Electron 27 build that can't start. Game patches and addon updates work as normal.
 - **Security:** Electron 22 has had no security fixes since October 2023. The launcher only shows its own pages, but keep this build for machines that can't run the normal one.
 
+### Installing on Windows 7
+
+1. Check *Start > right-click Computer > Properties > System type*, then download the matching installer from [Releases](https://github.com/Salahaja/OctoLauncher-plus/releases): `-64bit` or `-32bit`. Windows 7 needs Service Pack 1.
+2. Install the **Microsoft Visual C++ 2015–2022 Redistributable, x86**: [vc_redist.x86.exe](https://aka.ms/vs/17/release/vc_redist.x86.exe), version 14.44, the last that supports Windows 7. Take the x86 one even on 64-bit Windows, because the game is 32-bit. The launcher itself doesn't need it; the game's Nampower and multi-monitor mods do. **Don't use Microsoft's "latest" download (14.50 and newer); it only supports Windows 10 and 11.**
+3. If that installer fails, install the *Update for Universal C Runtime* ([KB2999226](https://support.microsoft.com/kb/2999226)) first, then try again: [64-bit Windows 7](https://www.microsoft.com/download/details.aspx?id=49093) · [32-bit Windows 7](https://www.microsoft.com/download/details.aspx?id=49077).
+4. Run the launcher installer. It isn't code-signed, so Windows may say "Unknown publisher"; click Run.
+5. In the launcher: Settings (the gear) > choose the game folder > **UPDATE** downloads and patches the game. In **MODS**, leave DXVK off, since it needs a Vulkan 1.3 driver, which Windows 7 drivers rarely have. Add the game folder and the launcher folder as exclusions in your antivirus.
+
 Build it like `main` (`npm run build && npm run pack`), then check that every shipped binary loads on Windows 7:
 
     python scripts/check-win7.py distprod/win-unpacked
