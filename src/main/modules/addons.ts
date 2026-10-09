@@ -46,6 +46,33 @@ const isAllowedGitUrl = (url: string) => {
 
 const ADDONS_FETCH_TIMEOUT_MS = 8000;
 
+// a fork's clone also has the original as a remote ("upstream"); listRemotes
+// gives them in config order, and the addon follows origin, not the original
+const primaryRemote = (dir: string) =>
+	git
+		.listRemotes({ fs, dir })
+		.then(r => r.find(x => x.remote === 'origin') ?? r[0] ?? null)
+		.catch(() => null);
+
+type StatusRow = [string, number, number, number];
+
+// A clone made by command-line git on Windows (core.autocrlf) holds CRLF where
+// the commit has LF. isomorphic-git does no line-ending conversion, so it
+// counts every such file as edited and the addon could never update. Only a
+// difference beyond line endings is a local change.
+const isLocalChange = async (dir: string, head: string, row: StatusRow) => {
+	const [filepath, HEAD, , WORKDIR] = row;
+	if (HEAD !== 1 || WORKDIR === 0) return true;
+	try {
+		const { blob } = await git.readBlob({ fs, dir, oid: head, filepath });
+		const lf = (b: Uint8Array) =>
+			Buffer.from(b).toString('latin1').replace(/\r\n/g, '\n');
+		return lf(blob) !== lf(await fs.readFile(path.join(dir, filepath)));
+	} catch {
+		return true;
+	}
+};
+
 class AddonsClass extends Observable<AddonsStatus> {
 	protected _value: AddonsStatus = {
 		state: 'done',
@@ -140,7 +167,7 @@ class AddonsClass extends Observable<AddonsStatus> {
 			git: a.git,
 			toc: a.toc,
 			description: a.description,
-			folder: a.name,
+			folder: a.folder ?? a.name,
 			branch: a.branch,
 			ref: a.ref,
 			ours: a.ours
@@ -180,12 +207,9 @@ class AddonsClass extends Observable<AddonsStatus> {
 				await fs.readFile(path.join(dir, `${folder}.toc`), 'utf-8')
 			);
 
-			const remote = await git
-				.listRemotes({ fs, dir })
-				.then(r => r[0])
-				.catch(() => null);
+			const remote = await primaryRemote(dir);
 
-			const avail = remoteAddons.find(a => a.name === folder);
+			const avail = remoteAddons.find(a => (a.folder ?? a.name) === folder);
 			const tags = { ours: avail?.ours };
 			if (!remote) {
 				Logger.log(`Addon "${folder}" is not a git repository`);
@@ -222,10 +246,18 @@ class AddonsClass extends Observable<AddonsStatus> {
 							.then(r => r[0].oid)
 							.catch(() => null);
 
-				const status = await git.statusMatrix({ fs, dir });
-				const hasChanges = status.some(
+				const status = (await git.statusMatrix({ fs, dir })) as StatusRow[];
+				const differing = status.filter(
 					([_, HEAD, index, workdir]) => HEAD !== index || index !== workdir
 				);
+				const hasChanges =
+					differing.length > 0 &&
+					(!localCommit ||
+						(
+							await Promise.all(
+								differing.map(row => isLocalChange(dir, localCommit, row))
+							)
+						).some(Boolean));
 
 				// an update is a forced checkout of the remote: it throws away
 				// uncommitted edits and any commit the remote doesn't have, so
@@ -329,10 +361,7 @@ class AddonsClass extends Observable<AddonsStatus> {
 			};
 			this.#setAddon(folder, data);
 
-			const remote = await git
-				.listRemotes({ fs, dir })
-				.then(r => r?.[0])
-				.catch(() => null);
+			const remote = await primaryRemote(dir);
 
 			try {
 				if (!remote) {

@@ -5,6 +5,9 @@ import { type TocData } from '~common/schemas';
 
 export type CatalogEntry = {
 	name: string;
+	// the AddOns folder, when it isn't the repo's name: WoW folders may start
+	// with '!' (to load first), GitHub repo names can't
+	folder?: string;
 	owner: string;
 	branch?: string;
 	ref?: string;
@@ -24,19 +27,24 @@ const FETCH_TIMEOUT_MS = 8000;
 // serves Turtle's server APIs too (it answers TWThreat's TWT_UDTSv4 request).
 const HIDDEN = new Set(['pfQuest-turtle']);
 
-// every public, non-fork repo of this account with <repo>.toc at its root is
-// one of our addons, so a new one shows up without a launcher release
+// every public repo of this account with <repo>.toc (or !<repo>.toc) at its
+// root is one of our addons, so a new one shows up without a launcher release.
+// A fork counts only when it carries commits of ours; a plain mirror would
+// just shadow the original's newer releases.
 const OUR_GITHUB_USER = 'Salahaja';
 
 // used when the GitHub API is unreachable or rate-limited (60 requests/hour
 // per IP without a token)
 const OUR_FALLBACK: { name: string; branch: string }[] = [
 	{ name: 'Bagertz', branch: 'main' },
+	{ name: 'Bagshui', branch: 'main' },
+	{ name: 'FpsWatch', branch: 'main' },
 	{ name: 'GimmetbarbieAddonManager', branch: 'main' },
 	{ name: 'GrayfathersFrameroids', branch: 'main' },
 	{ name: 'GrayfathersQuestshare', branch: 'main' },
 	{ name: 'OctoMapReveal', branch: 'main' },
 	{ name: 'pfQuest-octo-plus', branch: 'main' },
+	{ name: 'Rested', branch: 'master' },
 	{ name: 'Rollcall', branch: 'main' },
 	{ name: 'VendorTruth', branch: 'main' },
 	{ name: 'WhisperRelay', branch: 'master' },
@@ -64,6 +72,7 @@ export const readTocData = (content: string) =>
 type GithubRepo = {
 	name: string;
 	default_branch: string;
+	parent?: { full_name: string; default_branch: string };
 	description: string | null;
 	fork: boolean;
 	archived: boolean;
@@ -71,22 +80,54 @@ type GithubRepo = {
 	stargazers_count: number;
 };
 
+const githubApi = async <T>(endpoint: string) => {
+	const res = await fetch(`https://api.github.com/${endpoint}`, {
+		timeout: FETCH_TIMEOUT_MS,
+		headers: {
+			'Accept': 'application/vnd.github+json',
+			'User-Agent': 'OctoLauncher'
+		}
+	});
+	if (!res.ok) throw new Error(`GitHub API ${res.status} for ${endpoint}`);
+	return (await res.json()) as T;
+};
+
+// fork name -> carries commits of ours; asked once per launcher run, since
+// it costs two of the 60 API requests an hour GitHub allows without a token
+const forkIsOurs = new Map<string, boolean>();
+
+const carriesOurCommits = async (r: GithubRepo) => {
+	const known = forkIsOurs.get(r.name);
+	if (known !== undefined) return known;
+	try {
+		const { parent } = await githubApi<GithubRepo>(
+			`repos/${OUR_GITHUB_USER}/${r.name}`
+		);
+		if (!parent) return false;
+		const { ahead_by } = await githubApi<{ ahead_by: number }>(
+			`repos/${OUR_GITHUB_USER}/${r.name}/compare/${
+				parent.full_name.split('/')[0]
+			}:${parent.default_branch}...${OUR_GITHUB_USER}:${r.default_branch}`
+		);
+		forkIsOurs.set(r.name, ahead_by > 0);
+		return ahead_by > 0;
+	} catch (e) {
+		Logger.warn(`Could not compare fork ${r.name} with its original`, e);
+		return false;
+	}
+};
+
 const listOurRepos = async () => {
 	try {
-		const res = await fetch(
-			`https://api.github.com/users/${OUR_GITHUB_USER}/repos?per_page=100`,
-			{
-				timeout: FETCH_TIMEOUT_MS,
-				headers: {
-					'Accept': 'application/vnd.github+json',
-					'User-Agent': 'OctoLauncher'
-				}
-			}
+		const repos = await githubApi<GithubRepo[]>(
+			`users/${OUR_GITHUB_USER}/repos?per_page=100`
 		);
-		if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-		const repos = (await res.json()) as GithubRepo[];
-		return repos
-			.filter(r => !r.fork && !r.archived)
+		const live = repos.filter(r => !r.archived);
+		const ours = await Promise.all(
+			live.map(async r => !r.fork || (await carriesOurCommits(r)))
+		);
+		return live
+			.filter((_, i) => ours[i])
 			.map(r => ({
 				name: r.name,
 				branch: r.default_branch,
@@ -100,27 +141,32 @@ const listOurRepos = async () => {
 	}
 };
 
+// the addon's .toc at the repo root, and the folder it names
 const fetchToc = async (name: string, branch: string) => {
-	try {
-		const res = await fetch(
-			`https://raw.githubusercontent.com/${OUR_GITHUB_USER}/${name}/${branch}/${name}.toc`,
-			{ timeout: FETCH_TIMEOUT_MS }
-		);
-		if (!res.ok) return undefined;
-		return readTocData(await res.text());
-	} catch {
-		return undefined;
+	for (const folder of [name, `!${name}`]) {
+		try {
+			const res = await fetch(
+				`https://raw.githubusercontent.com/${OUR_GITHUB_USER}/${name}/${branch}/${encodeURIComponent(folder)}.toc`,
+				{ timeout: FETCH_TIMEOUT_MS }
+			);
+			if (res.ok) return { folder, toc: readTocData(await res.text()) };
+		} catch {
+			// unreachable: try the next name, then give up
+		}
 	}
+	return undefined;
 };
 
 export const fetchOurAddons = async (): Promise<CatalogEntry[]> => {
 	const repos = await listOurRepos();
 	const entries = await Promise.all(
 		repos.map(async (r): Promise<CatalogEntry | undefined> => {
-			const toc = await fetchToc(r.name, r.branch);
-			if (!toc?.Interface) return undefined;
+			const found = await fetchToc(r.name, r.branch);
+			if (!found?.toc.Interface) return undefined;
+			const { folder, toc } = found;
 			return {
 				...r,
+				folder: folder === r.name ? undefined : folder,
 				owner: OUR_GITHUB_USER,
 				git: `https://github.com/${OUR_GITHUB_USER}/${r.name}.git`,
 				toc,
@@ -154,7 +200,7 @@ export const fetchCatalog = async (): Promise<CatalogEntry[]> => {
 		fetchOfficialAddons(),
 		fetchOurAddons()
 	]);
-	const ourNames = new Set(ours.map(a => a.name));
+	const ourNames = new Set(ours.flatMap(a => [a.name, a.folder ?? a.name]));
 	return [
 		...official.filter(a => !HIDDEN.has(a.name) && !ourNames.has(a.name)),
 		...ours
