@@ -15,15 +15,20 @@
         otherwise take precedence over the block it writes
       * probes each resolved address on the game port and drops any that don't answer, so a
         round-robin name with a dead address mixed in doesn't hand the client a coin flip
+      * when every resolved address for a name is unreachable, falls back on its own to an
+        address that name used in an earlier backup and still answers (see -NoFallback)
       * writes every remaining address a name resolves to, sorted, so repeated runs are stable
       * backs the hosts file up first and flushes the DNS cache afterwards
       * keeps the window open at the end so you can read the result
 
-    When the realm is under DDoS its filter blackholes the addresses DNS currently hands out,
-    so the client times out even though the server is up. -CheckKnown probes every address these
-    names were pinned to before (read from this file's own backups) and reports which still
-    answer; -FallbackPin then pins a responding earlier address for any name whose current
-    addresses are all down, as a temporary way back in until normal addresses work again.
+    When the realm is under DDoS its filter blackholes the addresses DNS hands out now, so the
+    client times out even though the server is up. So when a name's resolved addresses are all
+    unreachable, the tool automatically tries the addresses that name used before - read from
+    this file's own backups - and pins a responding one, instead of settling for the dead
+    resolved ones. It never touches a name that already has a reachable resolved address, and it
+    reverts on its own: the next run restores the current addresses once they answer again.
+    -NoFallback turns this off (resolved addresses only); -CheckKnown additionally reports
+    earlier addresses for names that are already reachable.
 
 .PARAMETER Server
     IP address (or hostname) of the DNS server to query. Defaults to 37.156.68.20.
@@ -72,16 +77,18 @@
     Skip running "ipconfig /flushdns" after a successful update.
 
 .PARAMETER CheckKnown
-    After resolving, probe every address these names were ever pinned to - gathered from this
-    hosts file's own timestamped backups - and report which still answer on -VerifyPort, with
-    the date each was last seen. Reports only; it writes nothing on its own. Useful during a
-    DDoS, when the addresses DNS hands out now are being dropped but an earlier one still works.
+    Also probe and report the addresses that names which ARE reachable were pinned to before
+    (from this file's own timestamped backups), with the date each was last seen. The automatic
+    fallback already handles names that are down; this just shows the earlier addresses for the
+    healthy ones too. Reporting only - it changes nothing. Does nothing under -SkipVerify.
 
 .PARAMETER FallbackPin
-    Like -CheckKnown, but also writes a responding earlier address into the block for any name
-    whose current (resolved) addresses are all down. It never touches a name DNS is already
-    serving a working address for, and does nothing under -SkipVerify. Re-run without it once
-    the realm is reachable normally, to go back to the current addresses.
+    Accepted but no longer needed: the fallback is on by default. Kept so older instructions
+    don't error. Use -NoFallback to turn the fallback off.
+
+.PARAMETER NoFallback
+    Turn the automatic fallback off: use only the addresses DNS resolves, and if they are all
+    unreachable, write them unverified rather than trying addresses from earlier backups.
 
 .PARAMETER NoElevate
     Fail with a message instead of prompting for elevation.
@@ -106,13 +113,19 @@
     Shows what would be written without touching anything. Needs no elevation.
 
 .EXAMPLE
-    .\Update-HostsFromDns.ps1 -CheckKnown
-    Resolves and pins as usual, then reports which previously-used addresses still answer.
+    .\Update-HostsFromDns.ps1
+    The whole job. If the realm's current addresses are all unreachable (a DDoS), it falls back
+    on its own to an address the realm used before that still answers. It reverts automatically
+    once the current addresses work again.
 
 .EXAMPLE
-    .\Update-HostsFromDns.ps1 -FallbackPin
-    If the realm's current addresses are all down but one it used before still answers, pins
-    that earlier address so you can connect. Re-run plain once the realm is back to normal.
+    .\Update-HostsFromDns.ps1 -CheckKnown
+    Same as above, and also reports which earlier addresses still answer even for names that are
+    already reachable - handy for seeing what's alive.
+
+.EXAMPLE
+    .\Update-HostsFromDns.ps1 -NoFallback
+    Use only what DNS resolves; don't fall back to earlier addresses.
 
 .EXAMPLE
     .\Update-HostsFromDns.ps1 -Server 10.0.0.53 -Name intranet.corp.local -Tag CorpVPN
@@ -154,6 +167,8 @@ param(
     [switch]$CheckKnown,
 
     [switch]$FallbackPin,
+
+    [switch]$NoFallback,
 
     [switch]$NoElevate,
 
@@ -523,6 +538,8 @@ try {
     $droppedDead = 0
     $fallbackUsed = 0
     $namesWithAlive = @{}
+    $downNames = @{}   # name -> its resolved addresses that were all unreachable (or @() if DNS gave none)
+    $useFallback = (-not $NoFallback) -and (-not $SkipVerify)
 
     if (-not $SkipVerify) {
         Write-Host ("  Probing each address on port {0} ({1} attempt(s) each)..." -f $VerifyPort, $VerifyAttempts) -ForegroundColor DarkGray
@@ -536,6 +553,12 @@ try {
                 $addresses = @($previous[$hostName])
                 $reused++
                 Write-Warning ("Keeping previous address(es) for '{0}': {1}" -f $hostName, ($addresses -join ', '))
+            }
+            elseif ($useFallback) {
+                # DNS gives nothing and there is no current block entry - defer to the
+                # known-address pass below, which tries addresses this name used in earlier backups.
+                $downNames[$hostName] = @()
+                continue
             }
             else {
                 $failed++
@@ -557,7 +580,7 @@ try {
                 }
                 else {
                     [void]$dead.Add($ip)
-                    Write-Host ("    {0,-16} {1,-20} not answering - dropping" -f $ip, $hostName) -ForegroundColor Yellow
+                    Write-Host ("    {0,-16} {1,-20} not answering" -f $ip, $hostName) -ForegroundColor Yellow
                 }
             }
             if ($alive.Count -gt 0) {
@@ -566,11 +589,14 @@ try {
                 $namesWithAlive[$hostName] = $true
             }
             elseif ($dead.Count -gt 0) {
-                # Every address for this name failed the probe. More likely this network can't
-                # make the probe (a local firewall, or the probe itself being blocked) than that
-                # a whole round-robin name is really down - so fall back to writing them all
-                # rather than leaving the name with nothing.
-                Write-Warning ("None of {0}'s addresses answered on port {1} - writing all of them unverified rather than leaving it with none." -f $hostName, $VerifyPort)
+                # Every resolved address is unreachable. Before settling for them, defer to the
+                # known-address pass below, which tries addresses this name used before - only if
+                # that finds nothing do we write these unverified. -NoFallback skips straight to that.
+                if ($useFallback) {
+                    $downNames[$hostName] = @($addresses)
+                    continue
+                }
+                Write-Warning ("None of {0}'s addresses answered on port {1} - writing them unverified rather than leaving it with none." -f $hostName, $VerifyPort)
             }
         }
 
@@ -581,67 +607,92 @@ try {
         }
     }
 
-    # --- Previously-seen addresses (fallback) ---------------------------------------------------
-    # When the realm is under DDoS, its filter silently drops the addresses DNS hands out now,
-    # even though the server itself is up and full of players. Addresses it used earlier can
-    # still answer. -CheckKnown probes every address these names were pinned to before (from this
-    # file's own backups) and reports which still respond. -FallbackPin then writes a responding
-    # earlier address for any name whose current addresses are all down - a reconnection fallback,
-    # not a change to who you connect to. It never overrides a name DNS is already serving well,
-    # and it does nothing under -SkipVerify, where down can't be told from up.
-    if (($CheckKnown -or $FallbackPin) -and -not $SkipVerify) {
-        Write-Host ''
-        Write-Host '  Checking previously-seen addresses...' -ForegroundColor Cyan
-        $known = Get-KnownAddresses -HostsFilePath $targetFull -Names $Name -Pattern $ipv4Pattern
-
-        foreach ($hostName in ($Name | Select-Object -Unique)) {
-            # addresses already queued for this name this run; don't re-probe them
-            $current = @()
-            foreach ($e in $entries) { if ($e.HostName -eq $hostName) { $current += $e.IPAddress } }
-
-            $candidates = @()
-            if ($known.ContainsKey($hostName)) {
-                $candidates = @($known[$hostName].Keys | Where-Object { $current -notcontains $_ })
+    # --- Previously-seen addresses --------------------------------------------------------------
+    # When the realm is under DDoS its filter blackholes the addresses DNS hands out now, so the
+    # client times out even though the server is up and full of players. Addresses the realm used
+    # a little earlier often still answer. So before concluding that only the (unreachable)
+    # resolved addresses are available, this probes every address these names were pinned to
+    # before - read from this file's own backups - and uses a responding one for any name that is
+    # currently down. It never touches a name that already has a reachable resolved address. This
+    # is on by default; -NoFallback turns it off, -CheckKnown also reports earlier addresses for
+    # names that are up, and nothing here runs under -SkipVerify (down can't be told from up).
+    $settleUnverified = {
+        param($hn, $why)
+        # Last resort for a down name with no working earlier address: write the unreachable
+        # resolved address(es) rather than leave the name with nothing, the same as before.
+        if ($downNames[$hn].Count -gt 0) {
+            Write-Warning ("'{0}' {1} - writing its resolved address(es) unverified rather than leaving it with none." -f $hn, $why)
+            $picked = $downNames[$hn]
+            if ($FirstOnly) { $picked = @($picked[0]) }
+            foreach ($ip in $picked) {
+                [void]$entries.Add((New-Object PSObject -Property @{ IPAddress = $ip; HostName = $hn }))
             }
-            if ($candidates.Count -eq 0) {
-                Write-Host ("    {0,-20} no earlier addresses on record" -f $hostName) -ForegroundColor DarkGray
-                continue
-            }
+        }
+        else {
+            $script:failed++
+            Write-Warning ("No reachable address for '{0}', now or in the backups - skipping." -f $hn)
+        }
+    }
 
-            $working = New-Object System.Collections.ArrayList
-            foreach ($ip in ($candidates | Sort-Object { [version]$_ })) {
-                $seen = $known[$hostName][$ip]
-                if (Test-AddressReachable -IPAddress $ip -Port $VerifyPort -TimeoutMs $VerifyTimeoutMs -Attempts $VerifyAttempts) {
-                    [void]$working.Add($ip)
-                    Write-Host ("    {0,-16} {1,-20} answering  (last seen {2})" -f $ip, $hostName, $seen) -ForegroundColor Green
+    if ($useFallback -or ($CheckKnown -and -not $SkipVerify)) {
+        if (($downNames.Count -gt 0) -or $CheckKnown) {
+            Write-Host ''
+            Write-Host '  Checking previously-seen addresses...' -ForegroundColor Cyan
+            $known = Get-KnownAddresses -HostsFilePath $targetFull -Names $Name -Pattern $ipv4Pattern
+
+            foreach ($hostName in ($Name | Select-Object -Unique)) {
+                $isDown = $downNames.ContainsKey($hostName)
+                # a healthy name is only looked at to report, when asked
+                if (-not $isDown -and -not $CheckKnown) { continue }
+
+                # don't re-probe addresses already queued (the reachable ones), nor the resolved
+                # ones we just found unreachable for this down name
+                $exclude = @()
+                foreach ($e in $entries) { if ($e.HostName -eq $hostName) { $exclude += $e.IPAddress } }
+                if ($isDown) { $exclude += $downNames[$hostName] }
+
+                $candidates = @()
+                if ($known.ContainsKey($hostName)) {
+                    $candidates = @($known[$hostName].Keys | Where-Object { $exclude -notcontains $_ })
                 }
-                else {
-                    Write-Host ("    {0,-16} {1,-20} no answer  (last seen {2})" -f $ip, $hostName, $seen) -ForegroundColor DarkGray
-                }
-            }
 
-            # Only step in when this name's current addresses are all down - the attack case.
-            if ($working.Count -gt 0 -and -not $namesWithAlive.ContainsKey($hostName)) {
-                if ($FallbackPin) {
-                    $kept = New-Object System.Collections.ArrayList
-                    foreach ($e in $entries) { if ($e.HostName -ne $hostName) { [void]$kept.Add($e) } }
-                    $entries = $kept
-                    $picked = @($working)
-                    if ($FirstOnly) { $picked = @($working[0]) }
-                    foreach ($ip in $picked) {
-                        [void]$entries.Add((New-Object PSObject -Property @{ IPAddress = $ip; HostName = $hostName }))
+                if ($candidates.Count -eq 0) {
+                    if ($isDown) { & $settleUnverified $hostName 'is down and has no earlier address on record' }
+                    else { Write-Host ("    {0,-20} no earlier addresses on record" -f $hostName) -ForegroundColor DarkGray }
+                    continue
+                }
+
+                $working = New-Object System.Collections.ArrayList
+                foreach ($ip in ($candidates | Sort-Object { [version]$_ })) {
+                    $seen = $known[$hostName][$ip]
+                    if (Test-AddressReachable -IPAddress $ip -Port $VerifyPort -TimeoutMs $VerifyTimeoutMs -Attempts $VerifyAttempts) {
+                        [void]$working.Add($ip)
+                        Write-Host ("    {0,-16} {1,-20} answering  (last seen {2})" -f $ip, $hostName, $seen) -ForegroundColor Green
                     }
-                    $fallbackUsed += $picked.Count
-                    Write-Host ("    -> '{0}' is down; pinning earlier address {1} as a fallback" -f $hostName, ($picked -join ', ')) -ForegroundColor Cyan
+                    else {
+                        Write-Host ("    {0,-16} {1,-20} no answer  (last seen {2})" -f $ip, $hostName, $seen) -ForegroundColor DarkGray
+                    }
                 }
-                else {
-                    Write-Host ("    -> '{0}' is down but earlier address {1} answers; re-run with -FallbackPin to use it" -f $hostName, ($working -join ', ')) -ForegroundColor Yellow
+
+                if ($isDown) {
+                    if ($working.Count -gt 0) {
+                        $picked = @($working)
+                        if ($FirstOnly) { $picked = @($working[0]) }
+                        foreach ($ip in $picked) {
+                            [void]$entries.Add((New-Object PSObject -Property @{ IPAddress = $ip; HostName = $hostName }))
+                        }
+                        $fallbackUsed += $picked.Count
+                        Write-Host ("    -> '{0}' is down; using earlier address {1}" -f $hostName, ($picked -join ', ')) -ForegroundColor Cyan
+                    }
+                    else {
+                        & $settleUnverified $hostName 'is down and no earlier address answered'
+                    }
                 }
             }
         }
     }
-    elseif (($CheckKnown -or $FallbackPin) -and $SkipVerify) {
-        Write-Warning '-CheckKnown/-FallbackPin need probing; they do nothing with -SkipVerify.'
+    elseif ($CheckKnown -and $SkipVerify) {
+        Write-Warning '-CheckKnown needs probing; it does nothing with -SkipVerify.'
     }
 
     if ($entries.Count -eq 0) {
@@ -662,7 +713,7 @@ try {
         [void]$block.Add(("# {0} resolved address(es) did not answer on port {1} and were left out." -f $droppedDead, $VerifyPort))
     }
     if ($fallbackUsed -gt 0) {
-        [void]$block.Add(("# {0} earlier address(es) pinned as a fallback (-FallbackPin): current ones were down." -f $fallbackUsed))
+        [void]$block.Add(("# {0} earlier address(es) used as a fallback: the current ones were unreachable." -f $fallbackUsed))
     }
     foreach ($e in $entries) {
         [void]$block.Add(('{0,-16} {1}' -f $e.IPAddress, $e.HostName))
@@ -715,8 +766,8 @@ try {
     if (-not $SkipVerify) { $verifyNote = ', {0} dropped as unreachable' -f $droppedDead }
     Write-Host ('  {0} resolved, {1} reused from the previous block, {2} failed{3}.' -f $resolved, $reused, $failed, $verifyNote)
     if ($fallbackUsed -gt 0) {
-        Write-Host ('  {0} earlier address(es) pinned as a fallback because the current ones were down.' -f $fallbackUsed) -ForegroundColor Cyan
-        Write-Host '  This is temporary - re-run without -FallbackPin once the realm is reachable normally.' -ForegroundColor DarkGray
+        Write-Host ('  {0} earlier address(es) used as a fallback because the current ones were unreachable.' -f $fallbackUsed) -ForegroundColor Cyan
+        Write-Host '  This reverts on its own: the next run puts the current addresses back once they answer again.' -ForegroundColor DarkGray
     }
 
     if (-not $NoFlush) {
