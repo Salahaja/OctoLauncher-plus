@@ -1,5 +1,9 @@
 # OctoLauncher
 
+> **Unofficial fork** of [OctoWoW's OctoLauncher](https://octowow.st/git/octocontr/OctoLauncher), maintained by Salahaja. It is not made or supported by the OctoWoW team. What it changes is under [This fork](#this-fork-138-plus).
+>
+> **On Windows 7?** The official launcher can't run there. Download the `-64bit` or `-32bit` installer from [Releases](https://github.com/Salahaja/OctoLauncher-plus/releases), and see the [Windows 7 notes](https://github.com/Salahaja/OctoLauncher-plus/tree/win7#windows-7-build-branch-win7).
+
 Desktop launcher for the OctoWoW (World of Warcraft 1.12.1 private server) client. Built with Electron, React, and tRPC.
 
 **What it does:**
