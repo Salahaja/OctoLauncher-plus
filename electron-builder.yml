@@ -41,7 +41,7 @@ win:
     - nsis
 nsis:
   # versioned: differential updates need the old blockmap to stay fetchable
-  artifactName: ${productName}_Installer-${version}.${ext}
+  artifactName: ${productName}_Installer-${version}-${arch}.${ext}
   uninstallDisplayName: ${productName}
   oneClick: false
   removeDefaultUninstallWelcomePage: true

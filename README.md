@@ -16,7 +16,7 @@ Desktop launcher for the OctoWoW (World of Warcraft 1.12.1 private server) clien
 
 The official launcher and `main` use Electron 27, whose Chromium (118) dropped Windows 7, 8 and 8.1 at version 110, so they don't start there. This branch is `main` on **Electron 22.3.27**, the last release that supports Windows 7 (Chromium 108, Node 16). Everything else is the same code. `main` already carries what Node 16 and PowerShell 2.0 need, so this branch only changes the Electron version and the version suffix (`-win7`).
 
-- **Needs:** Windows 7 SP1, **64-bit** (aria2c and the native modules are x64), with Windows Update installed. No .NET or PowerShell upgrade is needed; the Tools tab works on the stock PowerShell 2.0.
+- **Needs:** Windows 7 SP1, 64-bit or 32-bit (two installers, `-x64` and `-ia32`), with Windows Update installed. No .NET or PowerShell upgrade is needed; the Tools tab works on the stock PowerShell 2.0. The game's nampower and multi-monitor mods need the Visual C++ 2015–2022 runtime (x86), and DXVK 2.x needs a Vulkan 1.3 driver, which few Windows 7 drivers have.
 - **Antivirus button:** Windows 7 has no Defender cmdlets, so it tells you which folders to exclude by hand.
 - **No self-update:** like `main`, it never updates itself, which matters doubly here, since an official update would install an Electron 27 build that can't start. Game patches and addon updates work as normal.
 - **Security:** Electron 22 has had no security fixes since October 2023. The launcher only shows its own pages, but keep this build for machines that can't run the normal one.
@@ -26,6 +26,13 @@ Build it like `main` (`npm run build && npm run pack`), then check that every sh
     python scripts/check-win7.py distprod/win-unpacked
 
 It reads each .exe/.dll/.node and fails on a CPU or OS-version mismatch, or on an import Windows 7 doesn't have. It rejects Electron 27 and passes this build.
+
+**32-bit (ia32)** needs 32-bit native modules and a 32-bit aria2c, so build it in a tree of its own (a detached worktree of this branch with a copy of `node_modules`):
+
+1. `resources/aria2c.exe`: the 32-bit `aria2c.exe` from aria2's official [1.37.0 release](https://github.com/aria2/aria2/releases/tag/release-1.37.0) (`aria2-1.37.0-win-32bit-build1.zip`). The 64-bit one the official launcher ships is byte-identical to that release's 64-bit build.
+2. Copy `vendor/stormlib-win32/*` over `node_modules/stormlib-node/lib/` (see its README for how they were built).
+3. `npx electron-builder install-app-deps --arch ia32 && node scripts/scrub-native-paths.cjs`
+4. `npm run build && npx electron-builder --config --ia32`, then `python scripts/check-win7.py distprod/win-ia32-unpacked`. Everything should be x86, except dll-inject's `testdll.dll`, an unused test file.
 
 ## This fork (1.3.8-plus)
 
