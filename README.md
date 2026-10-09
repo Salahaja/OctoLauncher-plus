@@ -12,6 +12,21 @@ Desktop launcher for the OctoWoW (World of Warcraft 1.12.1 private server) clien
 
 ---
 
+## Windows 7 build (branch `win7`)
+
+The official launcher and `main` use Electron 27, whose Chromium (118) dropped Windows 7, 8 and 8.1 at version 110, so they don't start there. This branch is `main` on **Electron 22.3.27**, the last release that supports Windows 7 (Chromium 108, Node 16). Everything else is the same code. `main` already carries what Node 16 and PowerShell 2.0 need, so this branch only changes the Electron version and the version suffix (`-win7`).
+
+- **Needs:** Windows 7 SP1, **64-bit** (aria2c and the native modules are x64), with Windows Update installed. No .NET or PowerShell upgrade is needed; the Tools tab works on the stock PowerShell 2.0.
+- **Antivirus button:** Windows 7 has no Defender cmdlets, so it tells you which folders to exclude by hand.
+- **No self-update:** like `main`, it never updates itself, which matters doubly here, since an official update would install an Electron 27 build that can't start. Game patches and addon updates work as normal.
+- **Security:** Electron 22 has had no security fixes since October 2023. The launcher only shows its own pages, but keep this build for machines that can't run the normal one.
+
+Build it like `main` (`npm run build && npm run pack`), then check that every shipped binary loads on Windows 7:
+
+    python scripts/check-win7.py distprod/win-unpacked
+
+It reads each .exe/.dll/.node and fails on a CPU or OS-version mismatch, or on an import Windows 7 doesn't have. It rejects Electron 27 and passes this build.
+
 ## This fork (1.3.8-plus)
 
 Built on the official 1.3.8: the public source stops at 1.3.6, and the 1.3.7–1.3.8 changes were recovered from the shipped `app.asar`, so it behaves as the official build does. On top of that:
